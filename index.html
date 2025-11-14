@@ -1,1 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Long-Multiplication Drill</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
+<style>
+:root{
+  --cell:80px;               /* JS will auto-shrink this so everything fits */
+  --cInd:#4338ca; --cLav:#ecebff; --cGood:#bbf7d0; --cBad:#f9a8d4; --answer:#c7d2fe
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{
+  display:flex;flex-direction:column;align-items:center;font-family:system-ui,Arial,sans-serif;
+  background:var(--cLav);color:#312e81;overflow:hidden;-webkit-tap-highlight-color:transparent;
+}
+h1{margin:18px 0 6px;font-size:1.9rem;text-align:center}
+#hud{margin-bottom:6px;font-size:1rem;display:flex;gap:1rem;flex-wrap:wrap;justify-content:center}
+.main{
+  flex:1 0 auto;display:flex;flex-direction:column;align-items:center;gap:.9rem;padding-bottom:68px;
+  max-width:100vw;
+  padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);
+}
+
+/* question bar */
+#qbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;justify-content:center}
+.qbox{width:var(--cell);height:var(--cell);border:4px solid var(--cInd);display:flex;align-items:center;justify-content:center;font-size:calc(var(--cell)*0.43);background:#fff;user-select:none}
+.qbox.digit{cursor:grab;touch-action:none}
+.qbox.digit:active{cursor:grabbing}
+.qtimes{background:#fff;font-weight:700;font-size:calc(var(--cell)*0.55);border:none;width:auto;padding:0 6px}
+
+/* grid */
+table{border-collapse:collapse;max-width:100vw}
+th,td{height:var(--cell);border:4px solid var(--cInd);text-align:center;vertical-align:middle;position:relative;overflow:hidden}
+th{background:#dbeafe;font-size:calc(var(--cell)*0.15)}
+.rowLbl{background:#ede9fe;padding:0 6px;font-size:.83rem;min-width:70px}
+.digitCell{width:var(--cell)}
+.drop{background:#f1f5f9}
+.drop.filled{background:#fff;font-size:calc(var(--cell)*0.48)}
+.drop.right{background:var(--cGood)!important}
+.drop.wrong{background:var(--cBad)!important}
+.drop.hover{outline:3px dashed var(--cInd);outline-offset:-3px}
+input.digit{width:100%;height:100%;border:none;background:#fff;color:#dc2626;font-size:calc(var(--cell)*0.48);text-align:center;outline:4px solid var(--cInd00)}
+input.digit:focus{outline:4px solid var(--cInd)}
+input.digit.right{background:var(--cGood)}
+input.digit.wrong{background:var(--cBad)}
+input.carry{
+  position:absolute;bottom:calc(var(--cell)*0.06);right:calc(var(--cell)*0.06);
+  width:calc(var(--cell)*0.24);height:calc(var(--cell)*0.24);
+  font-size:calc(var(--cell)*0.18);text-align:center;border:2px solid var(--cInd);border-radius:4px;background:#fff
+}
+
+/* answer row */
+.answer td.digitCell{background:var(--answer)}
+
+/* buttons */
+.controls{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:14px;flex-wrap:wrap;z-index:2}
+button{padding:9px 26px;font-size:.95rem;border:none;border-radius:9px;font-weight:600;cursor:pointer}
+#checkBtn{background:#4f46e5;color:#fff}
+#newBtn{background:#e2e8f0}
+
+/* overlay */
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;justify-content:center;align-items:center;z-index:100}
+.card{background:#fff;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:12px;width:300px}
+.card label{font-weight:600}.hidden{display:none}
+
+/* flash */
+@keyframes flashRed{0%{background:rgba(255,0,0,.25)}100%{background:transparent}}
+body.flash{animation:flashRed .35s ease-out}
+
+/* compact mode for tiny screens */
+body.compact h1{margin:10px 0 2px;font-size:1.5rem}
+body.compact #hud{gap:.6rem;font-size:.9rem}
+body.compact #qbar{gap:6px;margin-bottom:10px}
+body.compact .controls button{padding:7px 16px;font-size:.9rem}
+
+/* ─────────────── NEW: toolbox + cross-out marker ─────────────── */
+#toolbox{position:fixed;top:50%;right:16px;transform:translateY(-50%);display:flex;flex-direction:column;gap:16px;z-index:2}
+.crossTool{
+  position:relative;cursor:grab;width:var(--cell);height:var(--cell);
+  border:4px dashed var(--cInd);background:#fff;touch-action:none
+}
+.crossTool::before{
+  content:'';position:absolute;left:-4px;top:50%;
+  width:calc(100% + 8px);height:4px;background:var(--cInd);
+  transform:translateY(-50%) rotate(-45deg);transform-origin:center
+}
+/* marker dropped into a cell */
+.crossMarker{position:absolute;inset:0;pointer-events:none}
+.crossMarker::before{
+  content:'';position:absolute;left:-4px;top:50%;
+  width:calc(100% + 8px);height:4px;background:var(--cInd);
+  transform:translateY(-50%) rotate(-45deg);transform-origin:center
+}
+</style>
+</head>
+<body>
+
+<!-- overlay -->
+<div id="overlay">
+  <div class="card">
+    <h2 style="text-align:center">Start Quiz</h2>
+    <label>Name</label><input id="nameInput" placeholder="Your name">
+    <label>Mode</label>
+    <label><input type="radio" name="mode" value="timed" checked> Timed</label>
+    <label><input type="radio" name="mode" value="target"> Target</label>
+
+    <div id="timeOpts" style="display:flex;flex-direction:column;gap:2px;margin-left:10px">
+      <label><input type="radio" name="timer" value="300"> 5&nbsp;min</label>
+      <label><input type="radio" name="timer" value="600" checked> 10&nbsp;min</label>
+      <label><input type="radio" name="timer" value="900"> 15&nbsp;min</label>
+    </div>
+
+    <div id="goalOpt" class="hidden" style="display:flex;flex-direction:column;gap:4px">
+      <label>Target&nbsp;score</label><input id="goalInput" type="number" min="1" placeholder="e.g.&nbsp;20">
+    </div>
+
+    <button id="startBtn" style="background:#16a34a;color:#fff;border:none;padding:8px;border-radius:8px">Start</button>
+  </div>
+</div>
+
+<h1>Long-Multiplication</h1>
+<div id="hud">
+  <span id="hudName"></span>
+  <span id="hudScore">Score&nbsp;0</span>
+  <span id="hudTimer" class="hidden">Time&nbsp;<span id="timer">0:00</span></span>
+  <span id="hudGoal"  class="hidden">Goal&nbsp;<span id="goalLabel"></span></span>
+</div>
+
+<div class="main">
+  <div id="qbar"></div>
+  <div id="grid"></div>
+</div>
+
+<!-- NEW: toolbox with cross-out tool -->
+<div id="toolbox">
+  <div id="crossTool" class="crossTool" draggable="true" title="Drag to cross-out a cell"></div>
+</div>
+
+<div class="controls">
+  <button id="checkBtn">Check</button>
+  <button id="newBtn">New&nbsp;Problem</button>
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   1) FIT EVERYTHING ON ONE SCREEN (no overlap with buttons/toolbox)
+---------------------------------------------------------------- */
+function reserveForButtons(){
+  const main = document.querySelector('.main');
+  const ctrls = document.querySelector('.controls');
+  const h = ctrls ? Math.ceil(ctrls.getBoundingClientRect().height) : 0;
+  main.style.paddingBottom = (h + 24) + 'px';
+}
+function reserveForToolbox(){
+  const main = document.querySelector('.main');
+  const t = document.getElementById('toolbox');
+  const w = t ? Math.ceil(t.getBoundingClientRect().width) + 24 : 0;
+  main.style.paddingRight = w + 'px';
+}
+function fitEverything(){
+  reserveForButtons();
+  reserveForToolbox();
+
+  const MIN = 28, MAX = 100, STEP = 2;
+  let cell = MAX;
+  const root = document.documentElement;
+  const body = document.body;
+
+  body.classList.remove('compact');
+  body.style.transform = '';
+  body.style.transformOrigin = '';
+
+  while (cell >= MIN){
+    root.style.setProperty('--cell', cell + 'px');
+    void root.offsetHeight; // reflow
+    if (body.scrollHeight <= window.innerHeight && body.scrollWidth <= window.innerWidth) break;
+    cell -= STEP;
+  }
+  if (cell <= 44) body.classList.add('compact');
+
+  const overlayVisible = getComputedStyle(document.getElementById('overlay')).display !== 'none';
+  if (!overlayVisible && (body.scrollHeight > window.innerHeight || body.scrollWidth > window.innerWidth)){
+    const scale = Math.min(window.innerWidth / body.scrollWidth, window.innerHeight / body.scrollHeight);
+    body.style.transformOrigin = 'top center';
+    body.style.transform = `scale(${Math.max(0.85, Math.min(1, scale))})`;
+  }
+}
+window.addEventListener('load',   fitEverything);
+window.addEventListener('resize', fitEverything);
+
+/* helpers */
+const $=id=>document.getElementById(id);
+const rnd=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+const confetti=window.confetti;
+const to6=n=>String(n).padStart(6,'0').split('').map(Number);
+
+/* state */
+let A=0,B=0,score=0,name='Player';
+let mode='timed',timeLeft=0,timer=null,goal=null;
+
+/* overlay */
+[...document.querySelectorAll('input[name="mode"]')].forEach(r=>r.onchange=()=>toggleMode(r.value));
+function toggleMode(v){$('timeOpts').classList.toggle('hidden',v!=='timed');$('goalOpt').classList.toggle('hidden',v!=='target');}
+toggleMode('timed');
+
+$('startBtn').onclick=()=>{
+  name=$('nameInput').value.trim()||'Player';
+  mode=document.querySelector('input[name="mode"]:checked').value;
+  score=0;updateScore();$('hudName').textContent=`👤 ${name}`;
+  if(mode==='timed'){timeLeft=parseInt(document.querySelector('input[name="timer"]:checked').value,10);$('hudTimer').classList.remove('hidden');$('hudGoal').classList.add('hidden');startTimer();}
+  else{$('hudGoal').classList.remove('hidden');$('hudTimer').classList.add('hidden');goal=parseInt($('goalInput').value,10)||0;$('goalLabel').textContent=goal;clearInterval(timer);$('timer').textContent='∞';}
+  $('overlay').style.display='none';newProblem();fitEverything();
+};
+
+/* timer */
+function startTimer(){clearInterval(timer);tick();timer=setInterval(tick,1000);
+  function tick(){ $('timer').textContent=`${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`; if(timeLeft--<=0)endQuiz("⏰ Time's up!"); }}
+
+/* question bar */
+function buildQBar(){
+  const bar=$('qbar');bar.innerHTML='';
+  render(A,'a');bar.appendChild(sym('×','qtimes'));render(B,'b');
+  function render(num,row){
+    [...String(num)].forEach((d,i,arr)=>{
+      const col=6-(arr.length-i);
+      const box=document.createElement('div');
+      box.className='qbox digit';box.textContent=d;box.draggable=true;
+      box.dataset.row=row;box.dataset.col=col;box.dataset.val=d;
+      // Desktop HTML5 DnD:
+      box.ondragstart=e=>e.dataTransfer.setData('text/plain',JSON.stringify({row,col,val:d}));
+      // Touch/Pen fallback:
+      box.addEventListener('pointerdown',ev=>startPointerDragDigit(ev,{row,col,val:d}),{passive:false});
+      bar.appendChild(box);
+    });
+  }
+  function sym(ch,cls){const d=document.createElement('div');d.className=`qbox ${cls}`;d.textContent=ch;return d;}
+}
+
+/* build grid */
+function buildGrid(){
+  const tbl=document.createElement('table');
+  tbl.appendChild(labelRow());
+  tbl.appendChild(dropRow('Multiplicand','a'));
+  tbl.appendChild(dropRow('Multiplier','b'));
+
+  const rows=String(B).length;      // right-hand factor dictates rows
+  for(let i=0;i<rows;i++)tbl.appendChild(workRow(`Partial ${i+1}`));
+
+  tbl.appendChild(ansRow());
+  $('grid').innerHTML='';$('grid').appendChild(tbl);
+
+  function labelRow(){
+    const names=['100 000','10 000','1 000','100','10','1'];
+    const tr=document.createElement('tr');tr.appendChild(blankLbl());
+    names.forEach(t=>{const th=document.createElement('th');th.textContent=t;th.className='digitCell';tr.appendChild(th);});
+    return tr;
+  }
+  function blankLbl(){const th=document.createElement('th');th.className='rowLbl';return th;}
+
+  function dropRow(lbl,rowKey){
+    const tr=document.createElement('tr');
+    tr.appendChild(makeLbl(lbl));
+    for(let c=0;c<6;c++){
+      const td=document.createElement('td');td.className='drop digitCell';
+      td.dataset.row=rowKey;td.dataset.col=c;
+      td.ondragover=e=>e.preventDefault();
+      td.ondrop=handleDrop;
+      td.ondblclick=()=>{td.querySelector('.crossMarker')?.remove();};
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+
+  function workRow(lbl){
+    const tr=document.createElement('tr');
+    tr.appendChild(makeLbl(lbl));
+    for(let c=0;c<6;c++)tr.appendChild(makeCell('digit calc',c));
+    return tr;
+  }
+
+  function ansRow(){
+    const tr=document.createElement('tr');tr.className='answer';
+    tr.appendChild(makeLbl('Answer'));
+    for(let c=0;c<6;c++)tr.appendChild(makeCell('digit ans',c));
+    return tr;
+  }
+
+  function makeLbl(text){const th=document.createElement('th');th.className='rowLbl';th.textContent=text;return th;}
+
+  function makeCell(cls,col){
+    const td=document.createElement('td');td.className='digitCell';
+    const inp=document.createElement('input');inp.className=cls;inp.maxLength=1;
+    inp.oninput=()=>inp.value=inp.value.replace(/[^0-9]/g,'');td.appendChild(inp);
+
+    if(col<5){
+      const cb=document.createElement('input');cb.className='carry';cb.maxLength=1;
+      cb.oninput=()=>cb.value=cb.value.replace(/[^0-9]/g,'');
+      td.appendChild(cb);
+    }
+
+    /* enable cross-out drops + double-click to clear */
+    td.ondragover=e=>e.preventDefault();
+    td.ondrop=handleDrop;
+    td.ondblclick=()=>{td.querySelector('.crossMarker')?.remove();};
+    return td;
+  }
+}
+
+/* drag (desktop HTML5) */
+function handleDrop(e){
+  const d=JSON.parse(e.dataTransfer.getData('text/plain'));
+  const cell=e.currentTarget;
+
+  /* NEW: cross-out marker */
+  if(d.type==='cross'){ addCrossMarker(cell); return; }
+
+  /* Only allow digits in the designated .drop cells */
+  if(!cell.classList.contains('drop')) return;
+
+  if(cell.dataset.row===d.row&&cell.dataset.col===String(d.col)){cell.textContent=d.val;cell.classList.add('filled');}
+  else flash(cell);
+}
+function addCrossMarker(cell){
+  if(cell.querySelector('.crossMarker')) return;
+  const m=document.createElement('div');m.className='crossMarker';
+  cell.appendChild(m);
+}
+const flash=el=>{el.classList.add('wrong');setTimeout(()=>el.classList.remove('wrong'),350);};
+
+/* Touch/Pen pointer drag polyfill */
+let dragGhost=null, hoverCell=null, onUp=()=>{};
+function createGhostFrom(el,x,y){
+  const g = el.cloneNode(true);
+  Object.assign(g.style,{
+    position:'fixed',left:(x - el.offsetWidth/2)+'px',top:(y - el.offsetHeight/2)+'px',
+    width:getComputedStyle(el).width,height:getComputedStyle(el).height,opacity:'0.95',
+    pointerEvents:'none',transform:'scale(1.05)',zIndex:'99'
+  });
+  document.body.appendChild(g);
+  return g;
+}
+function pointerMove(ev){
+  if(!dragGhost) return;
+  dragGhost.style.left=(ev.clientX - dragGhost.offsetWidth/2)+'px';
+  dragGhost.style.top =(ev.clientY - dragGhost.offsetHeight/2)+'px';
+  const t = document.elementsFromPoint(ev.clientX, ev.clientY).find(el=>el.classList && el.classList.contains('digitCell'));
+  if(hoverCell!==t){
+    if(hoverCell) hoverCell.classList.remove('hover');
+    hoverCell=t;
+    if(hoverCell && hoverCell.classList.contains('drop')) hoverCell.classList.add('hover');
+  }
+}
+function pointerUp(payload){
+  document.removeEventListener('pointermove',pointerMove);
+  document.removeEventListener('pointerup',onUp,true);
+  if(dragGhost){dragGhost.remove();dragGhost=null;}
+  if(hoverCell){
+    handleDrop({ dataTransfer:{ getData:()=>JSON.stringify(payload) }, currentTarget:hoverCell });
+    if(hoverCell.classList.contains('drop')) hoverCell.classList.remove('hover');
+    hoverCell=null;
+  }
+}
+function startPointerDragDigit(e,payload){
+  if(e.pointerType==='mouse') return; // mouse uses native DnD
+  e.preventDefault();
+  dragGhost = createGhostFrom(e.currentTarget, e.clientX, e.clientY);
+  document.addEventListener('pointermove',pointerMove,{passive:false});
+  onUp = ()=>pointerUp(payload);
+  document.addEventListener('pointerup',onUp,true);
+}
+function startPointerDragTool(e,type){
+  if(e.pointerType==='mouse') return;
+  e.preventDefault();
+  dragGhost = createGhostFrom(e.currentTarget, e.clientX, e.clientY);
+  document.addEventListener('pointermove',pointerMove,{passive:false});
+  onUp = ()=>pointerUp({type});
+  document.addEventListener('pointerup',onUp,true);
+}
+
+/* generate */
+function randPair(){const cases=[[3,3],[3,2],[3,1],[2,2],[2,1]];const [d1,d2]=cases[rnd(0,cases.length-1)];const lo=n=>10**(n-1),hi=n=>10**n-1;return[rnd(lo(d1),hi(d1)),rnd(lo(d2),hi(d2))];}
+
+/* new problem */
+function newProblem(){[A,B]=randPair();buildQBar();buildGrid();document.querySelectorAll('.right,.wrong').forEach(el=>el.classList.remove('right','wrong'));}
+
+/* score */
+const updateScore=()=>$('hudScore').textContent=`Score ${score}`;
+const yay=()=>confetti({particleCount:110,spread:65,origin:{y:.25}});
+const nay=()=>{document.body.classList.add('flash');setTimeout(()=>document.body.classList.remove('flash'),350);};
+
+$('checkBtn').onclick=()=>{
+  let ok=true;
+  const dA=to6(A),dB=to6(B);
+  document.querySelectorAll('.drop').forEach(cell=>{
+    const idx=+cell.dataset.col,exp=cell.dataset.row==='a'?dA[idx]:dB[idx],got=cell.textContent||'0';
+    mark(cell,got==exp);if(got!=exp)ok=false;});
+  const want=to6(A*B);
+  document.querySelectorAll('.ans').forEach((inp,i)=>{mark(inp,(inp.value||'0')==want[i]);if((inp.value||'0')!=want[i])ok=false;});
+  if(ok){score++;updateScore();yay();newProblem();if(mode==='target'&&score>=goal)endQuiz('🎉 Goal reached!');}
+  else{score=Math.max(0,score-1);updateScore();nay();}
+  function mark(el,g){el.classList.toggle('right',g);el.classList.toggle('wrong',!g);}
+};
+
+/* finish */
+const endQuiz=msg=>{alert(`${msg}\nFinal score: ${score}`);location.reload()};
+
+/* bind */
+$('newBtn').addEventListener('click',newProblem);
+
+/* toolbox drag data (desktop HTML5) + pointer fallback */
+document.getElementById('crossTool').ondragstart=e=>e.dataTransfer.setData('text/plain',JSON.stringify({type:'cross'}));
+document.getElementById('crossTool').addEventListener('pointerdown',e=>startPointerDragTool(e,'cross'),{passive:false});
+
+/* initial layout tune */
+reserveForButtons(); reserveForToolbox();
+</script>
+</body>
+</html>
